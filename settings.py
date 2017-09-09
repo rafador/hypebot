@@ -1,0 +1,14 @@
+import os
+
+LOGLEVEL = "DEBUG"
+#timers in seconds
+MARKET_REFRESH_RATE=60
+RETRY_RATE=5
+API_TIMEOUT=2
+
+ELASTICSEARCH_CONNECT_STRING = "https://search-test-eipnxghgvc444it6z7hjgs5bxy.eu-west-1.es.amazonaws.com:443"
+
+TWITTER_AUTH_ACCESS_TOKEN = ""
+TWITTER_AUTH_ACCESS_SECRET = ""
+TWITTER_AUTH_API_KEY = ""
+TWITTER_AUTH_API_SECRET = ""
