@@ -4,11 +4,12 @@ import logging
 import requests
 import json
 import sys
-from datetime import datetime
+from coinmarketcap_utils import *
 
 import settings
 
 def main():
+
     logging.basicConfig(format='%(levelname)s:%(asctime)s %(message)s',level=settings.LOGLEVEL)
     es = Elasticsearch(settings.ELASTICSEARCH_CONNECT_STRING)
     es_indexname = "cmc_v1"
@@ -85,6 +86,8 @@ def main():
         logging.warning("Index problem: " + str(sys.exc_info()[0]))
         # raise
 
+    agg = Aggregations()
+
     #Record Ticks
     while True:
         try:
@@ -92,22 +95,22 @@ def main():
             r = requests.get("https://api.coinmarketcap.com/v1/ticker/")
             jsond = json.loads(r.content)
 
-            jsondBTC = jsond[0]
-
             # calculate the global market cap change
             gmc_before_1h = 0
             gmc_before_24h = 0
             gmc_before_7d = 0
             gmc_now = 0
 
+            utcnow = datetime.utcnow()
+
             for e in jsond:
                 # now-before / before = now/before - 1 = now_diff
                 # => now / before = now_diff+1
                 # => before = now / now_diff+1
-                now_diff_1h  = float(e['percent_change_1h']) / 100 if e['percent_change_1h'] is not None else 0
-                now_diff_24h = float(e['percent_change_24h']) / 100 if e['percent_change_24h'] is not None else 0
-                now_diff_7d  = float(e['percent_change_7d']) / 100 if e['percent_change_7d'] is not None else 0
-                now = float(e['market_cap_usd']) if e['market_cap_usd'] is not None else 0
+                now_diff_1h  = make_float(e['percent_change_1h'])  / 100
+                now_diff_24h = make_float(e['percent_change_24h']) / 100
+                now_diff_7d  = make_float(e['percent_change_7d'])  / 100
+                now = make_float(e['market_cap_usd'])
 
                 before_1h  = now  / (now_diff_1h + 1)
                 before_24h = now  / (now_diff_24h + 1)
@@ -124,112 +127,53 @@ def main():
             gmc_percent_change_24h  = ( gmc_now / gmc_before_24h - 1 ) * 100
             gmc_percent_change_7d   = ( gmc_now / gmc_before_7d - 1 ) * 100
 
+            btc_percent_change_1h   = make_float(jsond[0]['percent_change_1h'])
+            btc_percent_change_24h  = make_float(jsond[0]['percent_change_24h'])
+            btc_percent_change_7d   = make_float(jsond[0]['percent_change_7d'])
+
             for e in jsond:
-                e['@timestamp'] = datetime.utcnow()
-                e['last_updated'] = int(e['last_updated']) * 1000
+                e['@timestamp'] = utcnow
+                e['last_updated'] = int(e['last_updated']) * 1000 \
+                    if e['last_updated'] is not None else None
+                transformed = transform_for_elastic(e,
+                                                    btc_percent_change_1h,
+                                                    btc_percent_change_24h,
+                                                    btc_percent_change_7d,
+                                                    gmc_percent_change_1h,
+                                                    gmc_percent_change_24h,
+                                                    gmc_percent_change_7d)
+                # rank metrics
+                transformed = agg.add_min_for_property(transformed, "rank", 1000)
+                transformed = agg.add_max_for_property(transformed, "rank", 1000)
 
-                e["rank"]                = float(e['rank']) \
-                    if e['rank'] is not None else 0.0
-                e["price_usd"]           = float(e['price_usd']) \
-                    if e['price_usd'] is not None else 0.0
-                e["price_btc"]           = float(e['price_btc']) \
-                    if e['price_btc'] is not None else 0.0
-                e["24h_volume_usd"]      = float(e['24h_volume_usd']) \
-                    if e['24h_volume_usd'] is not None else 0.0
-                e["market_cap_usd"]      = float(e['market_cap_usd']) \
-                    if e['market_cap_usd'] is not None else 0.0
-                e["available_supply"]    = float(e['available_supply']) \
-                    if e['available_supply'] is not None else 0.0
-                e["total_supply"]        = float(e['total_supply']) \
-                    if e['total_supply'] is not None else 0.0
+                deepness = str(200)
+                transformed = agg.add_avg_for_property(transformed,     "rank", deepness)
+                transformed = agg.add_min_for_property(transformed,     "rank_avg"+deepness, deepness)
+                transformed = agg.add_ceil_for_property(transformed,    "rank_avg"+deepness+"_min"+deepness)
+                transformed = agg.add_floor_for_property(transformed,   "rank_avg"+deepness+"_min"+deepness)
+                transformed = agg.add_max_for_property(transformed,     "rank_avg"+deepness, deepness)
+                transformed = agg.add_ceil_for_property(transformed,    "rank_avg"+deepness+"_max"+deepness)
+                transformed = agg.add_floor_for_property(transformed,   "rank_avg"+deepness+"_max"+deepness)
+                transformed = agg.add_avg_for_property(transformed,     "price_btc", deepness)
+                transformed = agg.add_avg_for_property(transformed,     "price_usd", deepness)
+                transformed = agg.add_avg_for_property(transformed,     "market_cap_usd", deepness)
+                transformed = agg.add_avg_for_property(transformed,     "market_cap_btc", deepness)
 
-                e['percent_change_1h'] = float(e['percent_change_1h']) \
-                    if e['percent_change_1h'] is not None else 0.0
-                e['percent_change_24h'] = float(e['percent_change_24h']) \
-                    if e['percent_change_24h'] is not None else 0.0
-                e['percent_change_7d'] = float(e['percent_change_7d']) \
-                    if e['percent_change_7d'] is not None else 0.0
+                deepness = str(1000)
+                transformed = agg.add_avg_for_property(transformed, "rank", deepness)
+                transformed = agg.add_min_for_property(transformed, "rank_avg" + deepness, deepness)
+                transformed = agg.add_ceil_for_property(transformed, "rank_avg" + deepness + "_min" + deepness)
+                transformed = agg.add_floor_for_property(transformed, "rank_avg" + deepness + "_min" + deepness)
+                transformed = agg.add_max_for_property(transformed, "rank_avg" + deepness, deepness)
+                transformed = agg.add_ceil_for_property(transformed, "rank_avg" + deepness + "_max" + deepness)
+                transformed = agg.add_floor_for_property(transformed, "rank_avg" + deepness + "_max" + deepness)
+                transformed = agg.add_avg_for_property(transformed, "volume_percent_of_market_cap", deepness)
+                transformed = agg.add_avg_for_property(transformed, "price_btc", deepness)
+                transformed = agg.add_avg_for_property(transformed, "price_usd", deepness)
+                transformed = agg.add_avg_for_property(transformed, "market_cap_usd", deepness)
+                transformed = agg.add_avg_for_property(transformed, "market_cap_btc", deepness)
 
-
-                # augment with data
-                e["percent_change_1h_magnitude"] = abs(float(e['percent_change_1h'])) \
-                    if e['percent_change_1h'] is not None else 0.0
-                e["percent_change_24h_magnitude"] = abs(float(e['percent_change_24h'])) \
-                    if e['percent_change_24h'] is not None else 0.0
-                e["percent_change_7d_magnitude"] = abs(float(e['percent_change_7d'])) \
-                    if e['percent_change_7d'] is not None else 0.0
-
-                e["percent_change_1h_to_btc"] = \
-                    (float(e['percent_change_1h']) - float(jsondBTC['percent_change_1h'])) \
-                        if e['percent_change_1h'] is not None else 0.0
-                e["percent_change_24h_to_btc"] = \
-                    (float(e['percent_change_24h']) - float(jsondBTC['percent_change_24h'])) \
-                        if e['percent_change_24h'] is not None else 0.0
-                e["percent_change_7d_to_btc"] = \
-                    (float(e['percent_change_7d']) - float(jsondBTC['percent_change_7d'])) \
-                        if e['percent_change_7d'] is not None else 0.0
-
-                e["percent_change_1h_to_btc_magnitude"] = abs(float(e['percent_change_1h_to_btc']))
-                e["percent_change_24h_to_btc_magnitude"] = abs(float(e['percent_change_24h_to_btc']))
-                e["percent_change_7d_to_btc_magnitude"] = abs(float(e['percent_change_7d_to_btc']))
-
-                e["percent_change_1h_to_gmc"] = \
-                    (float(e['percent_change_1h']) - gmc_percent_change_1h) \
-                        if e['percent_change_1h'] is not None else 0.0
-                e["percent_change_24h_to_gmc"] = \
-                    (float(e['percent_change_24h']) - gmc_percent_change_24h) \
-                        if e['percent_change_24h'] is not None else 0.0
-                e["percent_change_7d_to_gmc"] = \
-                    (float(e['percent_change_7d']) - gmc_percent_change_7d) \
-                        if e['percent_change_7d'] is not None else 0.0
-
-                e["percent_change_1h_to_gmc_magnitude"] = abs(float(e['percent_change_1h_to_gmc']))
-                e["percent_change_24h_to_gmc_magnitude"] = abs(float(e['percent_change_24h_to_gmc']))
-                e["percent_change_7d_to_gmc_magnitude"] = abs(float(e['percent_change_7d_to_gmc']))
-
-                e["percent_change_1h_to_gmc_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_1h_to_gmc", e['@timestamp'], e["percent_change_1h_to_gmc"], e['last_updated'])
-                e["percent_change_24h_to_gmc_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_24h_to_gmc", e['@timestamp'], e["percent_change_24h_to_gmc"], e['last_updated'])
-                e["percent_change_7d_to_gmc_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_7d_to_gmc", e['@timestamp'], e["percent_change_7d_to_gmc"], e['last_updated'])
-
-                e["percent_change_1h_to_btc_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_1h_to_btc", e['@timestamp'],
-                                    e["percent_change_1h_to_btc"], e['last_updated'])
-                e["percent_change_24h_to_btc_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_24h_to_btc", e['@timestamp'],
-                                    e["percent_change_24h_to_btc"], e['last_updated'])
-                e["percent_change_7d_to_btc_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_7d_to_btc", e['@timestamp'],
-                                    e["percent_change_7d_to_btc"], e['last_updated'])
-
-                e["percent_change_1h_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_1h", e['@timestamp'],
-                                    e["percent_change_1h"], e['last_updated'])
-                e["percent_change_24h_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_24h", e['@timestamp'],
-                                    e["percent_change_24h"], e['last_updated'])
-                e["percent_change_7d_derivative"] = \
-                    calc_derivative(e['id'], "percent_change_7d", e['@timestamp'],
-                                    e["percent_change_7d"], e['last_updated'])
-
-                propname = "price_usd"
-                e[propname+"_derivative"] = \
-                    calc_derivative(e['id'], propname, e['@timestamp'],
-                                    e[propname], e['last_updated'])
-
-                propname = "price_btc"
-                e[propname + "_derivative"] = \
-                    calc_derivative(e['id'], propname, e['@timestamp'],
-                                    e[propname], e['last_updated'])
-
-                propname = "24h_volume_usd"
-                e[propname + "_derivative"] = \
-                    calc_derivative(e['id'], propname, e['@timestamp'],
-                                    e[propname], e['last_updated'])
-
-                es.index(index=es_indexname, doc_type="ticker", body=e)
+                es.index(index=es_indexname, doc_type="ticker", body=transformed)
 
             logging.info("Prises imported")
 
@@ -238,43 +182,6 @@ def main():
         except Exception as e:
             logging.error(e)
             sleep(settings.RETRY_RATE)
-
-buffer_for_derivative_calc = {}
-def calc_derivative(symbol, id, x, y, last_updated):
-
-    if  buffer_for_derivative_calc.get(symbol) is None:
-        buffer_for_derivative_calc[symbol] = {}
-        buffer_for_derivative_calc[symbol][id] = {}
-        buffer_for_derivative_calc[symbol][id]['y'] = y
-        buffer_for_derivative_calc[symbol][id]['x'] = x
-        buffer_for_derivative_calc[symbol][id]['last_updated'] = '0'
-        return None
-
-    if  buffer_for_derivative_calc[symbol].get(id) is None:
-        buffer_for_derivative_calc[symbol][id] = {}
-        buffer_for_derivative_calc[symbol][id]['y'] = y
-        buffer_for_derivative_calc[symbol][id]['x'] = x
-        buffer_for_derivative_calc[symbol][id]['last_updated'] = '0'
-        return None
-
-    if  buffer_for_derivative_calc[symbol][id]['last_updated'] == last_updated and \
-        buffer_for_derivative_calc[symbol][id]['y'] == y:
-        return None
-
-    prev_y = buffer_for_derivative_calc[symbol][id]['y']
-    prev_x = buffer_for_derivative_calc[symbol][id]['x']
-
-    buffer_for_derivative_calc[symbol][id]['x'] = x
-    buffer_for_derivative_calc[symbol][id]['y'] = y
-    buffer_for_derivative_calc[symbol][id]['last_updated'] = last_updated
-
-    der = (y - prev_y) # / (x - prev_x).total_seconds()
-
-    # buffer_for_derivative_calc[symbol][id]['der'] = der
-
-    # coinmarketcap refreshes every 5 mins. if refresh rate is 1 min, multiply by 5 to account for aprox. four 0s which come in between
-    return float(der) # * 5
-
 
 if __name__ == '__main__':
     main()
