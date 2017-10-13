@@ -28,11 +28,11 @@ def on_message(client, userdata, msg):
     #print(str(msg.payload))
     tractor.prepare_tweet_and_push_to_elastic(str(msg.payload.decode('utf-8')))
 
-client = mqtt.Client()
+client = mqtt.Client(client_id="twitter-stream", clean_session=False)
 client.on_connect = on_connect
 client.on_message = on_message
-
-client.connect("localhost", 1883, 60)
+client.username_pw_set(settings.MQTT_USER, settings.MQTT_PASS)
+client.connect(settings.MQTT_HOST, settings.MQTT_PORT, 60)
 
 # Blocking call that processes network traffic, dispatches callbacks and
 # handles reconnecting.

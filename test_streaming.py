@@ -31,8 +31,8 @@ logging.info(totrack)
 class MyStreamListener(tweepy.StreamListener):
 
     def on_data(self, data):
-        client.publish("hypebot/twitter_stream", json.dumps(json.loads(data)))
-        logging.debug("Tweet pushed.")
+        client.publish("hypebot/twitter_stream", json.dumps(json.loads(data)), qos=1)
+        logging.info("Tweet pushed.")
         return True
 
     # Error handling
@@ -61,7 +61,10 @@ signal.signal(signal.SIGINT, signal_term_handler)
 while True:
     logging.info("Connecting to MQTT.")
     client = mqtt.Client()
-    client.connect("localhost", 1883)
+    client.username_pw_set(settings.MQTT_USER, settings.MQTT_PASS)
+    client.connect(settings.MQTT_HOST, settings.MQTT_PORT)
+
+
     client.on_disconnect = on_disconnect
 
     logging.info("Connecting to Twitter.")
