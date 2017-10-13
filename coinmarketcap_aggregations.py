@@ -4,6 +4,7 @@ import math
 class Aggregations(object):
 
     def __init__(self):
+        # TODO: pickle
         self.aggr_buffer = {}
 
     def add_avg_for_property(self, _in, propname, count):
@@ -30,6 +31,10 @@ class Aggregations(object):
 
         # calc difference between avg and value
         _in[propname_id + "_diff"] = val - valavg
+
+        # calc percentual difference between avg and value
+        _in[propname_id + "_percent_diff"] = (( val - valavg ) / valavg ) * 100 \
+            if valavg != 0 else 0
 
         return _in
 
