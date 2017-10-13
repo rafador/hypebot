@@ -1,6 +1,48 @@
 from datetime import datetime
 from coinmarketcap_aggregations import *
 import logging
+import settings
+from elasticsearch import Elasticsearch
+
+es = Elasticsearch(settings.ELASTICSEARCH_CONNECT_STRING)
+def query_es_for_cmc_last_value(coinID, propname):
+    res = es.search(index=settings.ES_INDEX_CMC,
+                    body={
+                      "query": {
+                        "bool": {
+                          "must": [
+                            {
+                              "query_string": {
+                                "query": f"id.keyword: {coinID}",
+                                "analyze_wildcard": "false"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "size": 1,
+                      "sort": [
+                        {
+                          "@timestamp": {
+                            "order": "desc"
+                          }
+                        }
+                      ]
+                    })
+    return res[0][propname]
+
+
+def scale_value_to_unit_range(val,
+                         top,
+                         bottom):
+    # level_zero =  0
+    level_top  = top - bottom
+    level_val  = val - bottom
+    #scale to between 0 and 1
+    factor = 1 / level_top \
+        if level_top != 0 else 0
+
+    return level_val * factor
 
 
 def make_float(input):
@@ -79,48 +121,57 @@ def transform_for_elastic(e,
 
 
 
-
+# TODO: pickle
 buffer_for_derivative_calc = {}
+
+def init_buffer_for_coinID_and_propname(coinID, propname, y):
+    # TODO: try query from elastic
+    buffer_for_derivative_calc[coinID] = {}
+    init_buffer_for_propname(coinID, propname, y)
+
+def init_buffer_for_propname(coinID, propname, y):
+    # TODO: try query from elastic
+    smoothness = 1000
+    buffer_for_derivative_calc[coinID][propname] = {}
+    buffer_for_derivative_calc[coinID][propname]['y'] = collections.deque(smoothness * [y], smoothness)
+    buffer_for_derivative_calc[coinID][propname]['last_updated'] = '0'
+
 def add_derivative_for_property(_in, propname):
-
-    coinID = _in['id']
-    x = _in['@timestamp']
-    y = _in[propname]
-    last_updated = _in['last_updated']
-
+    coinID          = _in['id']
+    y               = _in[propname]
+    last_updated    = _in['last_updated']
 
     if  buffer_for_derivative_calc.get(coinID) is None:
-        buffer_for_derivative_calc[coinID] = {}
-        buffer_for_derivative_calc[coinID][propname] = {}
-        buffer_for_derivative_calc[coinID][propname]['y'] = y
-        # buffer_for_derivative_calc[coinID][propname]['x'] = x
-        buffer_for_derivative_calc[coinID][propname]['last_updated'] = '0'
+        init_buffer_for_coinID_and_propname(coinID, propname, y)
         return _in
 
     if  buffer_for_derivative_calc[coinID].get(propname) is None:
-        buffer_for_derivative_calc[coinID][propname] = {}
-        buffer_for_derivative_calc[coinID][propname]['y'] = y
-        # buffer_for_derivative_calc[coinID][propname]['x'] = x
-        buffer_for_derivative_calc[coinID][propname]['last_updated'] = '0'
+        init_buffer_for_propname(coinID, propname, y)
         return _in
+
+    prev_y = buffer_for_derivative_calc[coinID][propname]['y'][-1]
+    buffer_for_derivative_calc[coinID][propname]['y'].append(y)
 
     if  buffer_for_derivative_calc[coinID][propname]['last_updated'] == last_updated and \
-        buffer_for_derivative_calc[coinID][propname]['y'] == y:
+        prev_y == y:
         return _in
 
-    # prev_x = buffer_for_derivative_calc[coinID][propname]['x']
-    prev_y      = buffer_for_derivative_calc[coinID][propname]['y']
-
-    # buffer_for_derivative_calc[coinID][propname]['x'] = x
-    buffer_for_derivative_calc[coinID][propname]['y'] = y
     buffer_for_derivative_calc[coinID][propname]['last_updated'] = last_updated
 
-    der = float(y - prev_y) # / (x - prev_x).total_seconds()
+    valque = buffer_for_derivative_calc[coinID][propname]['y']
+    y1000 = float(math.fsum(valque)) / len(valque)
+
+    der = float(y - prev_y)
     _in[propname + "_derivative"] = der
 
     # calculate the percent change against the price
     pder = (der / y) * 100 \
         if y > 0 else None
     _in[propname + "_percent_derivative"] = pder
+
+    # calculate the percent change against the AVG price
+    pder = (der / y1000) * 100 \
+        if y1000 > 0 else None
+    _in[propname + "_smooth_percent_derivative"] = pder
 
     return _in
