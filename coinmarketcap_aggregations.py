@@ -1,26 +1,34 @@
 import collections
 import math
+from coinmarketcap_elastic_utils import *
+
+def calc_percent_ratio(val, base):
+    return (val / abs(base)) * 100 \
+        if base != 0 else None
 
 class Aggregations(object):
 
     def __init__(self):
-        # TODO: pickle
         self.aggr_buffer = {}
 
-    def add_avg_for_property(self, _in, propname, count):
+    def add_avg_for_property(self, _in, propname, deepness):
         if _in[propname] is None:
             return _in
 
         val = float(_in[propname])
         symbol_id  = _in['id']
-        propname_id = propname + "_avg" + str(count)
-        count = int(count)
+        propname_id = propname + "_avg" + str(deepness)
+        deepness = int(deepness)
 
         if self.aggr_buffer.get(symbol_id) is None:
             self.aggr_buffer[symbol_id] = {}
 
         if self.aggr_buffer[symbol_id].get(propname_id) is None:
-            self.aggr_buffer[symbol_id][propname_id] = collections.deque(count * [val], count)
+            last_from_es = query_es_for_cmc_last_value(symbol_id, propname_id)
+            if last_from_es is not None:
+                self.aggr_buffer[symbol_id][propname_id] = collections.deque(deepness * [last_from_es], deepness)
+            else:
+                self.aggr_buffer[symbol_id][propname_id] = collections.deque(deepness * [val], deepness)
 
         self.aggr_buffer[symbol_id][propname_id].append(val)
 
@@ -33,25 +41,28 @@ class Aggregations(object):
         _in[propname_id + "_diff"] = val - valavg
 
         # calc percentual difference between avg and value
-        _in[propname_id + "_percent_diff"] = (( val - valavg ) / valavg ) * 100 \
-            if valavg != 0 else 0
+        _in[propname_id + "_percent_diff"] = calc_percent_ratio(val - valavg, valavg )
 
         return _in
 
-    def add_min_for_property(self, _in, propname, count):
+    def add_min_for_property(self, _in, propname, deepness):
         if _in[propname] is None:
             return _in
 
         val = float(_in[propname])
         symbol_id  = _in['id']
-        propname_id = propname + "_min" + str(count)
-        count = int(count)
+        propname_id = propname + "_min" + str(deepness)
+        deepness = int(deepness)
 
         if self.aggr_buffer.get(symbol_id) is None:
             self.aggr_buffer[symbol_id] = {}
 
         if self.aggr_buffer[symbol_id].get(propname_id) is None:
-            self.aggr_buffer[symbol_id][propname_id] = collections.deque(count * [val], count)
+            min_from_es = query_es_for_cmc_min_value(symbol_id, propname_id, deepness)
+            if min_from_es is not None:
+                self.aggr_buffer[symbol_id][propname_id] = collections.deque(deepness * [min_from_es], deepness)
+            else:
+                self.aggr_buffer[symbol_id][propname_id] = collections.deque(deepness * [val], deepness)
 
         self.aggr_buffer[symbol_id][propname_id].append(val)
 
@@ -61,20 +72,24 @@ class Aggregations(object):
 
         return _in
 
-    def add_max_for_property(self, _in, propname, count):
+    def add_max_for_property(self, _in, propname, deepness):
         if _in[propname] is None:
             return _in
 
         val = float(_in[propname])
         symbol_id  = _in['id']
-        propname_id = propname + "_max" + str(count)
-        count = int(count)
+        propname_id = propname + "_max" + str(deepness)
+        deepness = int(deepness)
 
         if self.aggr_buffer.get(symbol_id) is None:
             self.aggr_buffer[symbol_id] = {}
 
         if self.aggr_buffer[symbol_id].get(propname_id) is None:
-            self.aggr_buffer[symbol_id][propname_id] = collections.deque(count * [val], count)
+            max_from_es = query_es_for_cmc_min_value(symbol_id, propname_id, deepness)
+            if max_from_es is not None:
+                self.aggr_buffer[symbol_id][propname_id] = collections.deque(deepness * [max_from_es], deepness)
+            else:
+                self.aggr_buffer[symbol_id][propname_id] = collections.deque(deepness * [val], deepness)
 
         self.aggr_buffer[symbol_id][propname_id].append(val)
 
@@ -98,5 +113,5 @@ class Aggregations(object):
 
         return _in
 
-
+agg = Aggregations()
 

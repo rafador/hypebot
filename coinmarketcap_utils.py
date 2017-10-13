@@ -1,36 +1,4 @@
-from datetime import datetime
 from coinmarketcap_aggregations import *
-import logging
-import settings
-from elasticsearch import Elasticsearch
-
-es = Elasticsearch(settings.ELASTICSEARCH_CONNECT_STRING)
-def query_es_for_cmc_last_value(coinID, propname):
-    res = es.search(index=settings.ES_INDEX_CMC,
-                    body={
-                      "query": {
-                        "bool": {
-                          "must": [
-                            {
-                              "query_string": {
-                                "query": f"id.keyword: {coinID}",
-                                "analyze_wildcard": "false"
-                              }
-                            }
-                          ]
-                        }
-                      },
-                      "size": 1,
-                      "sort": [
-                        {
-                          "@timestamp": {
-                            "order": "desc"
-                          }
-                        }
-                      ]
-                    })
-    return res[0][propname]
-
 
 def scale_value_to_unit_range(val,
                          top,
@@ -43,7 +11,6 @@ def scale_value_to_unit_range(val,
         if level_top != 0 else 0
 
     return level_val * factor
-
 
 def make_float(input):
     return float(input) \
@@ -117,61 +84,113 @@ def transform_for_elastic(e,
     e = add_derivative_for_property(e, "market_cap_usd")
     e = add_derivative_for_property(e, "market_cap_btc")
 
+    deepness = str(200)
+    # rank metrics
+    e = agg.add_min_for_property(e, "rank", deepness)
+    e = agg.add_max_for_property(e, "rank", deepness)
+    e = agg.add_avg_for_property(e, "rank", deepness)
+    e = agg.add_min_for_property(e, "rank_avg" + deepness, deepness)
+    e = agg.add_ceil_for_property(e, "rank_avg" + deepness + "_min" + deepness)
+    e = agg.add_floor_for_property(e, "rank_avg" + deepness + "_min" + deepness)
+    e = agg.add_max_for_property(e, "rank_avg" + deepness, deepness)
+    e = agg.add_ceil_for_property(e, "rank_avg" + deepness + "_max" + deepness)
+    e = agg.add_floor_for_property(e, "rank_avg" + deepness + "_max" + deepness)
+    # price
+    e = agg.add_avg_for_property(e, "price_btc", deepness)
+    e = agg.add_avg_for_property(e, "price_usd", deepness)
+    # market cap
+    e = agg.add_avg_for_property(e, "market_cap_usd", deepness)
+    e = agg.add_min_for_property(e, "market_cap_usd", deepness)
+    e = agg.add_max_for_property(e, "market_cap_usd", deepness)
+    e = agg.add_avg_for_property(e, "market_cap_btc", deepness)
+    e = agg.add_min_for_property(e, "market_cap_btc", deepness)
+    e = agg.add_max_for_property(e, "market_cap_btc", deepness)
+
+    deepness = str(1000)
+    # rank metrics
+    e = agg.add_min_for_property(e, "rank", deepness)
+    e = agg.add_max_for_property(e, "rank", deepness)
+    e = agg.add_avg_for_property(e, "rank", deepness)
+    e = agg.add_min_for_property(e, "rank_avg" + deepness, deepness)
+    e = agg.add_ceil_for_property(e, "rank_avg" + deepness + "_min" + deepness)
+    e = agg.add_floor_for_property(e, "rank_avg" + deepness + "_min" + deepness)
+    e = agg.add_max_for_property(e, "rank_avg" + deepness, deepness)
+    e = agg.add_ceil_for_property(e, "rank_avg" + deepness + "_max" + deepness)
+    e = agg.add_floor_for_property(e, "rank_avg" + deepness + "_max" + deepness)
+    # volume
+    e = agg.add_avg_for_property(e, "volume_percent_of_market_cap", deepness)
+    # price
+    e = agg.add_avg_for_property(e, "price_btc", deepness)
+    e = agg.add_avg_for_property(e, "price_usd", deepness)
+    # market cap
+    e = agg.add_avg_for_property(e, "market_cap_usd", deepness)
+    e = agg.add_min_for_property(e, "market_cap_usd", deepness)
+    e = agg.add_max_for_property(e, "market_cap_usd", deepness)
+    e = agg.add_avg_for_property(e, "market_cap_btc", deepness)
+    e = agg.add_min_for_property(e, "market_cap_btc", deepness)
+    e = agg.add_max_for_property(e, "market_cap_btc", deepness)
+
     return e
 
 
-
-# TODO: pickle
 buffer_for_derivative_calc = {}
 
-def init_buffer_for_coinID_and_propname(coinID, propname, y):
-    # TODO: try query from elastic
+def init_buffer_for_coinID_and_propname(coinID, propname, y, last_updated, smoothness):
     buffer_for_derivative_calc[coinID] = {}
-    init_buffer_for_propname(coinID, propname, y)
+    init_buffer_for_propname(coinID, propname, y, last_updated, smoothness)
 
-def init_buffer_for_propname(coinID, propname, y):
-    # TODO: try query from elastic
-    smoothness = 1000
+def init_buffer_for_propname(coinID, propname, y, last_updated, smoothness):
     buffer_for_derivative_calc[coinID][propname] = {}
-    buffer_for_derivative_calc[coinID][propname]['y'] = collections.deque(smoothness * [y], smoothness)
-    buffer_for_derivative_calc[coinID][propname]['last_updated'] = '0'
+    # try query from elastic
+    last_avg_from_es =  query_es_for_cmc_last_value(coinID, f"{propname}_avg{smoothness}")
+    last_from_es = query_es_for_cmc_last_value(coinID, f"{propname}")
+    # find the best last known value for Y
+    base = y
+    if last_from_es is not None:
+        base = last_from_es
+    if last_avg_from_es is not None:
+        base = last_avg_from_es
+    buffer_for_derivative_calc[coinID][propname]['y'] = collections.deque(smoothness * [base], smoothness)
+    buffer_for_derivative_calc[coinID][propname]['last_updated'] = last_updated
 
 def add_derivative_for_property(_in, propname):
     coinID          = _in['id']
     y               = _in[propname]
     last_updated    = _in['last_updated']
+    smoothness = 1000
 
     if  buffer_for_derivative_calc.get(coinID) is None:
-        init_buffer_for_coinID_and_propname(coinID, propname, y)
-        return _in
+        init_buffer_for_coinID_and_propname(coinID, propname, y, last_updated, smoothness)
 
     if  buffer_for_derivative_calc[coinID].get(propname) is None:
-        init_buffer_for_propname(coinID, propname, y)
-        return _in
+        init_buffer_for_propname(coinID, propname, y, last_updated, smoothness)
 
     prev_y = buffer_for_derivative_calc[coinID][propname]['y'][-1]
     buffer_for_derivative_calc[coinID][propname]['y'].append(y)
 
+    # persist also the basis for the "smooth" derivative
+    valque = buffer_for_derivative_calc[coinID][propname]['y']
+    y1000 = float(math.fsum(valque)) / len(valque)
+    _in[f"{propname}_avg{smoothness}"] = y1000
+
+    # don't set derivatives, if no change is detected
     if  buffer_for_derivative_calc[coinID][propname]['last_updated'] == last_updated and \
         prev_y == y:
         return _in
 
     buffer_for_derivative_calc[coinID][propname]['last_updated'] = last_updated
 
-    valque = buffer_for_derivative_calc[coinID][propname]['y']
-    y1000 = float(math.fsum(valque)) / len(valque)
-
     der = float(y - prev_y)
     _in[propname + "_derivative"] = der
 
     # calculate the percent change against the price
-    pder = (der / y) * 100 \
-        if y > 0 else None
+    pder = calc_percent_ratio(der, y)
     _in[propname + "_percent_derivative"] = pder
 
     # calculate the percent change against the AVG price
-    pder = (der / y1000) * 100 \
-        if y1000 > 0 else None
-    _in[propname + "_smooth_percent_derivative"] = pder
+    spder = calc_percent_ratio(der, y1000)
+    _in[propname + "_smooth_percent_derivative"] = spder
 
     return _in
+
+
