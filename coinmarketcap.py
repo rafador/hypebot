@@ -1,6 +1,4 @@
-from elasticsearch import Elasticsearch
 from time import sleep
-import logging
 import requests
 import json
 import sys
@@ -11,8 +9,8 @@ import settings
 def main():
 
     logging.basicConfig(format='%(levelname)s:%(asctime)s %(message)s',level=settings.LOGLEVEL)
-    es = Elasticsearch(settings.ELASTICSEARCH_CONNECT_STRING)
-    es_indexname = "cmc_v1"
+    # es = Elasticsearch(settings.ELASTICSEARCH_CONNECT_STRING)
+    # es_indexname = "cmc_v1"
 
 
     logging.info('Market Refresh Rate: ' + str(settings.MARKET_REFRESH_RATE) + ' seconds.')
@@ -79,8 +77,8 @@ def main():
         #     es.indices.delete(es_indexname)
         # except:
         #     pass
-        es.indices.create(es_indexname)
-        es.indices.put_mapping(index=es_indexname, doc_type="ticker", body=mapping)
+        es.indices.create(settings.ES_INDEX_CMC)
+        es.indices.put_mapping(index=settings.ES_INDEX_CMC, doc_type="ticker", body=mapping)
 
     except:
         logging.warning("Index problem: " + str(sys.exc_info()[0]))
@@ -91,6 +89,9 @@ def main():
     #Record Ticks
     while True:
         try:
+            # unpickle buffers
+            # ...
+
             # get ticker for all currencies
             r = requests.get("https://api.coinmarketcap.com/v1/ticker/")
             jsond = json.loads(r.content)
@@ -142,11 +143,11 @@ def main():
                                                     gmc_percent_change_1h,
                                                     gmc_percent_change_24h,
                                                     gmc_percent_change_7d)
-                # rank metrics
-                transformed = agg.add_min_for_property(transformed, "rank", 1000)
-                transformed = agg.add_max_for_property(transformed, "rank", 1000)
 
                 deepness = str(200)
+                # rank metrics
+                transformed = agg.add_min_for_property(transformed,     "rank", deepness)
+                transformed = agg.add_max_for_property(transformed,     "rank", deepness)
                 transformed = agg.add_avg_for_property(transformed,     "rank", deepness)
                 transformed = agg.add_min_for_property(transformed,     "rank_avg"+deepness, deepness)
                 transformed = agg.add_ceil_for_property(transformed,    "rank_avg"+deepness+"_min"+deepness)
@@ -154,12 +155,17 @@ def main():
                 transformed = agg.add_max_for_property(transformed,     "rank_avg"+deepness, deepness)
                 transformed = agg.add_ceil_for_property(transformed,    "rank_avg"+deepness+"_max"+deepness)
                 transformed = agg.add_floor_for_property(transformed,   "rank_avg"+deepness+"_max"+deepness)
+                # price
                 transformed = agg.add_avg_for_property(transformed,     "price_btc", deepness)
                 transformed = agg.add_avg_for_property(transformed,     "price_usd", deepness)
-                transformed = agg.add_avg_for_property(transformed,     "market_cap_usd", deepness)
-                transformed = agg.add_avg_for_property(transformed,     "market_cap_btc", deepness)
+                # market cap
+                transformed = agg.add_avg_for_property(transformed, "market_cap_usd", deepness)
+                transformed = agg.add_avg_for_property(transformed, "market_cap_btc", deepness)
 
                 deepness = str(1000)
+                # rank metrics
+                transformed = agg.add_min_for_property(transformed, "rank", deepness)
+                transformed = agg.add_max_for_property(transformed, "rank", deepness)
                 transformed = agg.add_avg_for_property(transformed, "rank", deepness)
                 transformed = agg.add_min_for_property(transformed, "rank_avg" + deepness, deepness)
                 transformed = agg.add_ceil_for_property(transformed, "rank_avg" + deepness + "_min" + deepness)
@@ -167,15 +173,22 @@ def main():
                 transformed = agg.add_max_for_property(transformed, "rank_avg" + deepness, deepness)
                 transformed = agg.add_ceil_for_property(transformed, "rank_avg" + deepness + "_max" + deepness)
                 transformed = agg.add_floor_for_property(transformed, "rank_avg" + deepness + "_max" + deepness)
+                # volume
                 transformed = agg.add_avg_for_property(transformed, "volume_percent_of_market_cap", deepness)
+                # price
                 transformed = agg.add_avg_for_property(transformed, "price_btc", deepness)
                 transformed = agg.add_avg_for_property(transformed, "price_usd", deepness)
+                # market cap
                 transformed = agg.add_avg_for_property(transformed, "market_cap_usd", deepness)
                 transformed = agg.add_avg_for_property(transformed, "market_cap_btc", deepness)
+
 
                 es.index(index=es_indexname, doc_type="ticker", body=transformed)
 
             logging.info("Prises imported")
+
+            # pickle buffers
+            # ...
 
             sleep(settings.MARKET_REFRESH_RATE)
 
