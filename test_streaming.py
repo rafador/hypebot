@@ -31,7 +31,7 @@ logging.info(totrack)
 class MyStreamListener(tweepy.StreamListener):
 
     def on_data(self, data):
-        client.publish("hypebot/twitter_stream", json.dumps(json.loads(data)), qos=1)
+        client.publish("hypebot/twitter_stream", json.dumps(json.loads(data)))
         logging.info("Tweet pushed.")
         return True
 
@@ -61,9 +61,11 @@ signal.signal(signal.SIGINT, signal_term_handler)
 while True:
     logging.info("Connecting to MQTT.")
     client = mqtt.Client()
-    client.username_pw_set(settings.MQTT_USER, settings.MQTT_PASS)
-    client.connect(settings.MQTT_HOST, settings.MQTT_PORT)
-
+    try:
+        client.username_pw_set(settings.MQTT_USER_PUBLISHER, settings.MQTT_PASS_PUBLISHER)
+    except:
+        pass
+    client.connect(settings.MQTT_HOST_PUBLISHER, settings.MQTT_PORT_PUBLISHER)
 
     client.on_disconnect = on_disconnect
 
