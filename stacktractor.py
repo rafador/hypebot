@@ -93,6 +93,7 @@ class TweetTractor():
 
         # Build the Elastic object
         body['@timestamp'] = timestamp_ms
+
         body['text'] = tweet['extended_tweet']['full_text'] \
             if tweet.get('extended_tweet') is not None \
             else tweet['text']
@@ -190,6 +191,7 @@ class TweetTractor():
     def push_prepared_tweet_to_elastic(self, prepared_tweet):
         self.es.index(index=settings.ELASTICSEARCH_TWITTER_STREAMING_INDEX_NAME,
                  doc_type="tweet",
+                 id=prepared_tweet['id_str'],
                  body=prepared_tweet,
                  params={'pipeline': settings.ELASTICSEARCH_TWITTER_STREAMING_PIPELINE_ID})
 

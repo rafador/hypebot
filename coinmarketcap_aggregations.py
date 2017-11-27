@@ -6,6 +6,11 @@ def calc_percent_ratio(val, base):
     return (val / abs(base)) * 100 \
         if base != 0 else None
 
+def calc_absolute_val(val):
+    return abs(val) \
+        if val is not None else None
+
+
 class Aggregations(object):
 
     def __init__(self):
@@ -96,6 +101,32 @@ class Aggregations(object):
         # calc MAX
         valque = self.aggr_buffer[symbol_id][propname_id]
         _in[propname_id] = max(valque)
+
+        return _in
+
+    def _normalize_value(self, val, min, max):
+        if  val is None or \
+            min is None or \
+            max is None:
+            return None
+        newzero = min
+        newmax  = max - newzero
+        # scale to [0 1] range
+        norm = (val - newzero) * (1 / newmax) \
+            if newmax is not None and newmax != 0 else None
+        return norm
+
+    def add_normalized_for_property(self, _in, propname, deepness):
+        propname_id = f"{propname}_normalized{str(deepness)}"
+
+        _in = agg.add_min_for_property(_in, propname, deepness)
+        _in = agg.add_max_for_property(_in, propname, deepness)
+        val = _in[propname]
+        min = _in[f"{propname}_min{deepness}"]
+        max = _in[f"{propname}_max{deepness}"]
+
+        _in[propname_id] = \
+            self._normalize_value(val, min, max)
 
         return _in
 

@@ -105,9 +105,9 @@ def main():
                 now_diff_7d  = make_float(e['percent_change_7d'])  / 100
                 now = make_float(e['market_cap_usd'])
 
-                before_1h  = now  / (now_diff_1h + 1)
-                before_24h = now  / (now_diff_24h + 1)
-                before_7d  = now  / (now_diff_7d + 1)
+                before_1h  = now  / (now_diff_1h + 1)   if now_diff_1h != -1 else 0
+                before_24h = now  / (now_diff_24h + 1)  if now_diff_24h != -1 else 0
+                before_7d  = now  / (now_diff_7d + 1)   if now_diff_7d != -1 else 0
 
                 gmc_now += now
                 gmc_before_1h += before_1h

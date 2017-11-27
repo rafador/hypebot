@@ -130,6 +130,12 @@ def transform_for_elastic(e,
     e = agg.add_min_for_property(e, "market_cap_btc", deepness)
     e = agg.add_max_for_property(e, "market_cap_btc", deepness)
 
+    # cascading aggregations
+    # 10 days
+    deepness = 10 * 24 * 60
+    e = agg.add_normalized_for_property(e, "24h_volume_usd", deepness)
+    e = add_derivative_for_property(e, f"24h_volume_usd_normalized{deepness}")
+
     return e
 
 
@@ -154,8 +160,10 @@ def init_buffer_for_propname(coinID, propname, y, last_updated, smoothness):
     buffer_for_derivative_calc[coinID][propname]['last_updated'] = last_updated
 
 def add_derivative_for_property(_in, propname):
+    y = _in[propname]
+    if y is None:
+        return _in
     coinID          = _in['id']
-    y               = _in[propname]
     last_updated    = _in['last_updated']
     smoothness = 1000
 
@@ -181,15 +189,18 @@ def add_derivative_for_property(_in, propname):
     buffer_for_derivative_calc[coinID][propname]['last_updated'] = last_updated
 
     der = float(y - prev_y)
-    _in[propname + "_derivative"] = der
+    _in[f"{propname}_derivative"] = der
+    _in[f"{propname}_derivative_magnitude"] = calc_absolute_val(der)
 
     # calculate the percent change against the price
     pder = calc_percent_ratio(der, y)
-    _in[propname + "_percent_derivative"] = pder
+    _in[f"{propname}_percent_derivative"] = pder
+    _in[f"{propname}_percent_derivative_magnitude"] = calc_absolute_val(pder)
 
     # calculate the percent change against the AVG price
     spder = calc_percent_ratio(der, y1000)
-    _in[propname + "_smooth_percent_derivative"] = spder
+    _in[f"{propname}_smooth_percent_derivative"] = spder
+    _in[f"{propname}_smooth_percent_derivative_magnitude"] = calc_absolute_val(spder)
 
     return _in
 
