@@ -208,5 +208,7 @@ class TweetTractor():
 
         except BaseException as e:
             self.logger.error("Error on_data: %s" % str(e))
+            self.logger.error(e)
+            pass
             # raise e
 

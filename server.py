@@ -38,6 +38,7 @@ try:
     client.username_pw_set(settings.MQTT_USER_SUBSCRIBER, settings.MQTT_PASS_SUBSCRIBER)
 except:
     pass
+
 client.connect(settings.MQTT_HOST_SUBSCRIBER, settings.MQTT_PORT_SUBSCRIVER, 60)
 
 # Blocking call that processes network traffic, dispatches callbacks and

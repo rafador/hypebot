@@ -85,7 +85,7 @@ def main():
     while True:
         try:
             # get ticker for all currencies
-            r = requests.get("https://api.coinmarketcap.com/v1/ticker/")
+            r = requests.get("https://api.coinmarketcap.com/v1/ticker/?limit=300")
             jsond = json.loads(r.content)
 
             # calculate the global market cap change

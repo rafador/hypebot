@@ -76,7 +76,7 @@ def query_es_for_cmc_last_value(coinID, propname):
         #                 })
         # return res['hits']['hits'][0]['_source'][propname]
         global es_data_buffer_for_last_val
-        es_data_buffer_for_last_val[coinID][propname]
+        return es_data_buffer_for_last_val[coinID][propname]
     except:
         return None
 

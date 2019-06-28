@@ -3,6 +3,9 @@ import logging
 import sys
 import settings
 from kafka import KafkaConsumer
+from time import sleep
+from kafka.structs import OffsetAndMetadata
+from kafka.structs import TopicPartition
 
 root = logging.getLogger()
 root.setLevel(settings.LOGLEVEL)
@@ -38,8 +41,21 @@ class Consumer():
                 for message in consumer:
                     decoded_message = str(message.value.decode('utf-8'))
                     tractor.prepare_tweet_and_push_to_elastic(decoded_message)
-                    consumer.commit()
+
+                    tp = TopicPartition(message.topic, message.partition)
+                    oem = OffsetAndMetadata(message.offset, '')
+                    consumer.commit({tp:oem})
+        except:
+            raise
         finally:
             consumer.close()
 
-Consumer().run()
+while True:
+    try:
+        Consumer().run()
+    except BaseException as ex:
+        logging.error(str(ex))
+        logging.warning("SLEEPING for 10 secs...")
+        sleep(10)
+        logging.warning("RETRYING")
+        pass
